@@ -15,10 +15,10 @@
 <nav><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a></nav>
 </main>
 <script>
-  // add.html?c=<code> opens GN at huddle://add/<code>. Codes are 12 letters and digits.
+  // add.html?c=<code> opens GN at gnapp://add/<code>. Codes are 12 letters and digits.
   var code = new URLSearchParams(location.search).get("c") || "";
   if (/^[a-z0-9]{6,32}$/.test(code)) {
-    var link = "huddle://add/" + code;
+    var link = "gnapp://add/" + code;
     document.getElementById("open").href = link;
     location.href = link;
   } else {
