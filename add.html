@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add me on GN</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<header><img src="icon.png" alt="GN app icon"><h1>Add me on GN</h1></header>
+<p>A friend invited you to make plans together on GN.</p>
+<p><a id="open" href="#"><strong>Open in GN</strong></a> and you'll be friends right away.</p>
+<p>Don't have GN yet? Get it on the App Store, then open this link again.</p>
+<nav><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a></nav>
+</main>
+<script>
+  // add.html?c=<code> opens GN at huddle://add/<code>. Codes are 12 letters and digits.
+  var code = new URLSearchParams(location.search).get("c") || "";
+  if (/^[a-z0-9]{6,32}$/.test(code)) {
+    var link = "huddle://add/" + code;
+    document.getElementById("open").href = link;
+    location.href = link;
+  } else {
+    document.querySelector("main > p").textContent = "This invite link isn't complete. Ask your friend to send it again.";
+  }
+</script>
+</body>
+</html>
