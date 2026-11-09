@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A plan on GN</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css">
+<style>
+  .card { border: 1px solid var(--line); border-radius: 20px; padding: 22px; margin: 18px 0; }
+  .emoji { font-size: 52px; line-height: 1; }
+  .title { font-size: 28px; font-weight: 700; margin: 10px 0 4px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  button, .button { font: inherit; font-weight: 600; border-radius: 12px; padding: 12px 18px; border: 0; cursor: pointer; text-decoration: none; display: inline-block; }
+  .yes { background: var(--accent); color: #fff; }
+  .no { background: var(--line); color: var(--text); }
+  .button.app { background: var(--line); color: var(--text); }
+  input { font: inherit; width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .notice { padding: 12px 14px; border-radius: 12px; background: var(--line); }
+  .error { color: #d70015; }
+  ul.guests { list-style: none; padding: 0; margin: 8px 0 0; }
+  ul.guests li { margin: 4px 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+<header><img src="icon.png" alt="GN app icon"><h1>GN</h1></header>
+
+<p id="loading" class="muted">Getting the plan…</p>
+<p id="problem" hidden></p>
+
+<section id="plan" hidden>
+  <p id="host" class="muted"></p>
+  <div class="card">
+    <div class="emoji" id="emoji"></div>
+    <div class="title" id="title"></div>
+    <div id="when"></div>
+    <div id="place" class="muted"></div>
+    <div id="going" class="muted"></div>
+    <ul class="guests" id="guests"></ul>
+  </div>
+
+  <div id="closed" class="notice" hidden></div>
+
+  <div id="answer">
+    <h2 id="ask">Are you in?</h2>
+    <p class="muted">No app needed: just your name. The host sees your answer.</p>
+    <label for="name" class="muted">Your name</label>
+    <input id="name" maxlength="40" autocomplete="given-name" placeholder="Your name">
+    <div class="row">
+      <button class="yes" id="yes">I'm in 👍</button>
+      <button class="no" id="no">Can't make it</button>
+    </div>
+    <p id="answerError" class="error" hidden></p>
+  </div>
+
+  <div id="answered" class="notice" hidden></div>
+
+  <h2>Have GN?</h2>
+  <p>Open the plan in GN to chat with everyone, vote on times and get reminders.</p>
+  <div class="row">
+    <a class="button yes" id="openApp" href="#">Open in GN</a>
+    <a class="button app" href="https://apps.apple.com/app/id6830113278">Get GN on the App Store</a>
+  </div>
+</section>
+
+<nav><a href="privacy.html">Privacy Policy</a><a href="terms.html">Terms of Use</a></nav>
+</main>
+<script>
+  // plan.html?c=<code>: the plan someone shared from GN. It talks to GN's own server, nothing else.
+  var server = "https://seoekqmakcxcojcjedfj.supabase.co/rest/v1/rpc/";
+  // The publishable key is meant to be public: the server's rules only let it read a shared plan and answer it.
+  var key = "sb_publishable_gHY6CzLjotrMjfNXTQqhBg_6VP-16Bo";
+  var code = (new URLSearchParams(location.search).get("c") || "").toLowerCase();
+  var $ = function (id) { return document.getElementById(id); };
+
+  function call(name, body) {
+    return fetch(server + name, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": key },
+      body: JSON.stringify(body)
+    }).then(function (response) {
+      return response.json().catch(function () { return null; }).then(function (data) {
+        // 400: the server said why (cancelled, over, no name…). Anything else: GN is having a moment.
+        if (response.status === 400 && data && data.message) throw new Error(data.message);
+        if (!response.ok) throw new Error("GN couldn't load this right now. Try again in a minute.");
+        return data;
+      });
+    });
+  }
+
+  function problem(text) {
+    $("loading").hidden = true;
+    $("plan").hidden = true;
+    $("problem").hidden = false;
+    $("problem").textContent = text;
+  }
+
+  // This browser's guest id, so answering again changes the answer instead of adding a new guest.
+  function guestKey() {
+    var stored = null;
+    try { stored = localStorage.getItem("gn-guest"); } catch (e) {}
+    if (stored) return stored;
+    var made = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, function (c) {
+          return (c ^ (Math.random() * 16) >> (c / 4)).toString(16);
+        });
+    try { localStorage.setItem("gn-guest", made); } catch (e) {}
+    return made;
+  }
+
+  function when(plan) {
+    var start = new Date(plan.start_at);
+    var day = start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    var time = start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (plan.voting) return "The time isn't set yet. Open GN to vote on it.";
+    if (plan.duration_hint === "unsure") return day + ", from " + time;
+    var end = new Date(start.getTime() + plan.duration_minutes * 60000);
+    return day + ", " + time + "–" + end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+
+  function show(plan) {
+    $("loading").hidden = true;
+    $("plan").hidden = false;
+    document.title = plan.emoji + " " + plan.title + " · GN";
+    $("host").textContent = plan.host ? plan.host.emoji + " " + plan.host.name + " invited you" : "";
+    $("emoji").textContent = plan.emoji;
+    $("title").textContent = plan.title;
+    $("when").textContent = when(plan);
+    $("place").textContent = "";
+    if (plan.place) {
+      if (plan.place_link && /^https:\/\//.test(plan.place_link)) {
+        var link = document.createElement("a");
+        link.href = plan.place_link;
+        link.textContent = "📍 " + plan.place;
+        link.rel = "noopener";
+        $("place").appendChild(link);
+      } else {
+        $("place").textContent = "📍 " + plan.place;
+      }
+    }
+    $("going").textContent = plan.going + " going";
+    $("guests").textContent = "";
+    (plan.guests || []).forEach(function (guest) {
+      var item = document.createElement("li");
+      item.textContent = (guest.answer === "accepted" ? "✅ " : "✖️ ") + guest.name + " (guest)";
+      $("guests").appendChild(item);
+    });
+    var closed = plan.is_cancelled ? "This plan was cancelled." : plan.is_over ? "This plan is over." : "";
+    $("closed").hidden = !closed;
+    $("closed").textContent = closed;
+    $("answer").hidden = !!closed;
+  }
+
+  function load() {
+    return call("shared_plan", { code: code }).then(function (plan) {
+      if (!plan) return problem("This plan isn't shared anymore. Ask whoever sent it for a new link.");
+      show(plan);
+    });
+  }
+
+  function answer(choice) {
+    var name = $("name").value.trim();
+    $("answerError").hidden = true;
+    if (!name) {
+      $("answerError").hidden = false;
+      $("answerError").textContent = "Type your name first.";
+      $("name").focus();
+      return;
+    }
+    try { localStorage.setItem("gn-name", name); } catch (e) {}
+    $("yes").disabled = $("no").disabled = true;
+    call("answer_shared_plan", { code: code, guest: guestKey(), guest_name: name, answer: choice })
+      .then(function () {
+        $("answered").hidden = false;
+        $("answered").textContent = choice === "accepted"
+          ? "You're on the list, " + name + "! The host can see you're coming. Changed your mind? Answer again here."
+          : "Got it, " + name + ". The host knows you can't make it. Changed your mind? Answer again here.";
+        return load();
+      })
+      .catch(function (error) {
+        $("answerError").hidden = false;
+        $("answerError").textContent = error.message;
+      })
+      .then(function () { $("yes").disabled = $("no").disabled = false; });
+  }
+
+  if (!/^[a-z0-9]{8,32}$/.test(code)) {
+    problem("This link isn't complete. Ask whoever sent it to share it again.");
+  } else {
+    $("openApp").href = "gnapp://plan/" + code;
+    try { $("name").value = localStorage.getItem("gn-name") || ""; } catch (e) {}
+    $("yes").addEventListener("click", function () { answer("accepted"); });
+    $("no").addEventListener("click", function () { answer("declined"); });
+    load().catch(function (error) { problem(error.message); });
+  }
+</script>
+</body>
+</html>
